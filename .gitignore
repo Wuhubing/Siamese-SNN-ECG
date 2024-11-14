@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# macOS
+.DS_Store
+._.DS_Store
+
+# Environment
+venv/
+env/
+.env/
+
+# IDE配置
+.vscode/
+.idea/
+
+# Raw数据文件
+data/raw/*.atr
+data/raw/*.dat
+data/raw/*.hea
+
+# 大文件
+data/processed/processed_data.pkl
+notebooks/best_model.pth
+
+# 临时文件
+*.log
+*.tmp
