@@ -1,4 +1,3 @@
-# src/utils/training.py
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -6,17 +5,22 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix
 import pickle
+from datetime import datetime
+import os
+
+from src.models.snn import SNN, CombinedLoss
+from src.data.dataset import create_dataloaders
 
 class EarlyStopping:
-    def __init__(self, patience=12, min_delta=0.0008):  
+    def __init__(self, patience=12, min_delta=0.0008):
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
         self.best_loss = None
-        self.best_acc = None  
+        self.best_acc = None
         self.early_stop = False
         
-    def step(self, val_loss, val_acc): 
+    def step(self, val_loss, val_acc):
         if self.best_loss is None:
             self.best_loss = val_loss
             self.best_acc = val_acc
@@ -30,7 +34,8 @@ class EarlyStopping:
             self.counter = 0
         return self.early_stop
 
-def train_epoch(model, train_loader, criterion, optimizer, device, scheduler, max_grad_norm=1.0):
+def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=None, max_grad_norm=1.0):
+    """训练一个epoch"""
     model.train()
     total_loss = 0
     all_preds = []
@@ -44,34 +49,41 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler, ma
         y1 = batch['y1'].to(device).squeeze()
         y2 = batch['y2'].to(device).squeeze()
         
-        y1 = y1.long()
-        y2 = y2.long()
+        # 前向传播
+        embedding1, embedding2, logits1, logits2 = model(x1, x2)
         
-       
-        emb1, emb2, logits1, logits2 = model(x1, x2)
+        # 计算损失
+        loss = criterion(embedding1, embedding2, logits1, logits2, y1, y2)
         
-        
-        loss = criterion(emb1, emb2, logits1, logits2, y1, y2)
-        
-     
+        # 反向传播
         optimizer.zero_grad()
         loss.backward()
         
-        
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+        # 梯度裁剪
+        if max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         
         optimizer.step()
-        scheduler.step()
+        if scheduler is not None:
+            scheduler.step()
         
+        # 记录损失和预测
         total_loss += loss.item()
-        
-        _, preds = torch.max(logits1, 1)
-        all_preds.extend(preds.cpu().numpy())
+        _, preds1 = torch.max(logits1, 1)
+        _, preds2 = torch.max(logits2, 1)
+        all_preds.extend(preds1.cpu().numpy())
+        all_preds.extend(preds2.cpu().numpy())
         all_labels.extend(y1.cpu().numpy())
+        all_labels.extend(y2.cpu().numpy())
     
-    return total_loss / len(train_loader), all_preds, all_labels
+    # 计算平均损失和准确率
+    avg_loss = total_loss / len(train_loader)
+    accuracy = np.mean(np.array(all_preds) == np.array(all_labels))
+    
+    return avg_loss, accuracy, all_preds, all_labels
 
 def evaluate(model, data_loader, criterion, device):
+    """评估模型"""
     model.eval()
     total_loss = 0
     all_preds = []
@@ -80,28 +92,31 @@ def evaluate(model, data_loader, criterion, device):
     with torch.no_grad():
         for batch in data_loader:
             x1, x2 = batch['x1'].to(device), batch['x2'].to(device)
-           
             if len(x2.shape) == 3:
                 x2 = x2.squeeze(1)
                 
-    
-            y1 = batch['y1'].to(device).squeeze()  
-            y2 = batch['y2'].to(device).squeeze()  
+            y1 = batch['y1'].to(device).squeeze()
+            y2 = batch['y2'].to(device).squeeze()
             
-        
-            y1 = y1.long()
-            y2 = y2.long()
+            # 前向传播
+            embedding1, embedding2, logits1, logits2 = model(x1, x2)
             
-            emb1, emb2, logits1, logits2 = model(x1, x2)
-            loss = criterion(emb1, emb2, logits1, logits2, y1, y2)
+            # 计算损失
+            loss = criterion(embedding1, embedding2, logits1, logits2, y1, y2)
             
+            # 记录损失和预测
             total_loss += loss.item()
-            
-            _, preds = torch.max(logits1, 1)
-            all_preds.extend(preds.cpu().numpy())
+            _, preds1 = torch.max(logits1, 1)
+            _, preds2 = torch.max(logits2, 1)
+            all_preds.extend(preds1.cpu().numpy())
+            all_preds.extend(preds2.cpu().numpy())
             all_labels.extend(y1.cpu().numpy())
+            all_labels.extend(y2.cpu().numpy())
     
-    return total_loss / len(data_loader), all_preds, all_labels
+    # 计算平均损失
+    avg_loss = total_loss / len(data_loader)
+    
+    return avg_loss, all_preds, all_labels
 
 def plot_metrics(train_losses, val_losses, train_accs, val_accs):
     plt.figure(figsize=(12, 4))
@@ -131,136 +146,97 @@ def plot_confusion_matrix(y_true, y_pred, classes):
     plt.xlabel('Predicted Label')
     plt.show()
 
-def train_model(processed_data, num_epochs=100, batch_size=128, lr=0.001):
-    from src.models.snn import SNN, CombinedLoss
-    from src.data.dataset import create_dataloaders
-    
+def train_model(processed_data, model_name='default', num_epochs=100, batch_size=128, lr=0.001):
+    """训练模型并返回结果"""
+    # 设置设备和超参数
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    max_grad_norm = 1.0
+    print(f"\nUsing device: {device}")
     
-    # Data dimension check
-    print("\nData dimension check:")
-    print(f"Feature shape: {processed_data['X_train'].shape}")
-    print(f"Label shape: {processed_data['y_train'].shape}")
-    print(f"Number of classes: {len(processed_data['classes'])}")
-
-    train_loader, val_loader, test_loader = create_dataloaders(processed_data, batch_size)
-
-    # Check first batch dimensions
-    for batch in train_loader:
-        print("\nFirst batch dimensions:")
-        print(f"x1 shape: {batch['x1'].shape}")
-        print(f"x2 shape: {batch['x2'].shape}")
-        print(f"y1 shape: {batch['y1'].shape}")
-        print(f"y2 shape: {batch['y2'].shape}")
-        break
-    
-    # Create model
-    input_size = processed_data['feature_shape'][0]
+    # 获取输入维度
+    X_train = processed_data['X_train']
+    input_size = X_train.shape[1] * X_train.shape[2] if len(X_train.shape) == 3 else X_train.shape[1]
     num_classes = len(processed_data['classes'])
-    print(f"\nModel configuration:")
-    print(f"Input dimension: {input_size}")
+    
+    print("\nData dimension check:")
+    print(f"Feature shape: {tuple(X_train.shape)}")
+    print(f"Label shape: {processed_data['y_train'].shape}")
     print(f"Number of classes: {num_classes}")
+    print(f"Input size after flattening: {input_size}")
     
-    model = SNN(input_size=input_size,
-                hidden_size=192,
-                num_classes=num_classes).to(device)
+    # 创建模型
+    model = SNN(input_size=input_size, hidden_size=192, num_classes=num_classes).to(device)
+    criterion = CombinedLoss(margin=2.0, alpha=0.65)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     
-    # Define loss function and optimizer
-    criterion = CombinedLoss(
-        margin=2.0, 
-        alpha=0.65
-    )
-    
-    optimizer = torch.optim.AdamW(
-        model.parameters(), 
-        lr=lr, 
-        weight_decay=0.02,
-        betas=(0.9, 0.999)
-    )
-    
-    # Use OneCycleLR scheduler
-    steps_per_epoch = len(train_loader)
+    # 创建学习率调度器
+    num_training_steps = len(processed_data['X_train']) // batch_size * num_epochs
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=lr,
-        epochs=num_epochs,
-        steps_per_epoch=steps_per_epoch,
-        pct_start=0.25,
-        div_factor=20,
-        final_div_factor=1e3
+        total_steps=num_training_steps,
+        pct_start=0.3,
+        anneal_strategy='cos'
     )
     
-    # Enhanced early stopping strategy
-    early_stopping = EarlyStopping(patience=15, min_delta=0.0005)
+    # 创建数据加载器
+    train_loader, val_loader, test_loader = create_dataloaders(
+        processed_data, batch_size=batch_size
+    )
     
-    # Add gradient clipping parameter
-    max_grad_norm = 1.0
+    # 打印第一个batch的维度
+    print("\nFirst batch dimensions:")
+    first_batch = next(iter(train_loader))
+    print(f"x1 shape: {first_batch['x1'].shape}")
+    print(f"x2 shape: {first_batch['x2'].shape}")
+    print(f"y1 shape: {first_batch['y1'].shape}")
+    print(f"y2 shape: {first_batch['y2'].shape}")
     
-    # Training history
-    train_losses, val_losses = [], []
-    train_accs, val_accs = [], []
-    best_val_acc = 0.0
+    # 初始化训练变量
+    best_val_acc = 0
     best_val_loss = float('inf')
+    train_losses = []
+    val_losses = []
+    train_accs = []
+    val_accs = []
+    early_stopping = EarlyStopping(patience=12, min_delta=0.0008)
+    start_time = datetime.now()
     
-    # Training loop
+    # 训练循环
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch+1}/{num_epochs}")
         
-        # Train and validate
-        model.train()
-        train_loss, train_preds, train_labels = train_epoch(
+        # 训练一个epoch
+        train_loss, train_acc, _, _ = train_epoch(
             model, train_loader, criterion, optimizer, device, scheduler, max_grad_norm)
-        train_acc = np.mean(np.array(train_preds) == np.array(train_labels))
         
-        model.eval()
-        val_loss, val_preds, val_labels = evaluate(
-            model, val_loader, criterion, device)
+        # 验证
+        val_loss, val_preds, val_labels = evaluate(model, val_loader, criterion, device)
         val_acc = np.mean(np.array(val_preds) == np.array(val_labels))
         
-        # Improved model saving condition
-        if (val_acc > best_val_acc) or \
-           (val_acc >= best_val_acc and val_loss < best_val_loss * 0.995):
-            best_val_acc = val_acc
-            best_val_loss = val_loss
-            
-            # Get model configuration
-            model_config = {
-                'input_size': model.input_size if hasattr(model, 'input_size') else input_size,
-                'hidden_size': model.hidden_size if hasattr(model, 'hidden_size') else 192,
-                'num_classes': model.num_classes if hasattr(model, 'num_classes') else num_classes,
-                'alpha': getattr(criterion, 'alpha', 0.65),
-                'margin': getattr(criterion, 'margin', 2.0)
-            }
-            
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'val_acc': val_acc,
-                'val_loss': val_loss,
-                'train_acc': train_acc,
-                'train_loss': train_loss,
-                'model_config': model_config
-            }, 'best_model.pth')
-            print(f"Saved new best model with val_acc: {val_acc:.4f}, val_loss: {val_loss:.4f}")
-        
-        # Record metrics
+        # 记录指标
         train_losses.append(train_loss)
         val_losses.append(val_loss)
         train_accs.append(train_acc)
         val_accs.append(val_acc)
         
-        # Print current status
-        current_lr = optimizer.param_groups[0]['lr']
-        print(f"Current LR: {current_lr:.6f}")
-        print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}")
-        print(f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        # 打印当前epoch的结果
+        print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
+        print(f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
         
-        # Check early stopping
+        # 保存最佳模型
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'val_acc': val_acc,
+            }, 'best_model.pth')
+        
+        # 早停检查
         if early_stopping.step(val_loss, val_acc):
-            print(f"Early stopping triggered at epoch {epoch+1}")
+            print("\nEarly stopping triggered!")
             break
     
     # Plot training process
@@ -286,13 +262,28 @@ def train_model(processed_data, num_epochs=100, batch_size=128, lr=0.001):
     # Plot confusion matrix
     plot_confusion_matrix(test_labels, test_preds, processed_data['classes'])
     
-    return model, {
+    # 保存训练结果
+    results = {
+        'model_name': model_name,
         'train_losses': train_losses,
         'val_losses': val_losses,
         'train_accs': train_accs,
         'val_accs': val_accs,
-        'best_epoch': checkpoint['epoch'],
-        'best_val_acc': checkpoint['val_acc'],
         'test_acc': test_acc,
-        'test_loss': test_loss
+        'test_loss': test_loss,
+        'best_epoch': checkpoint['epoch'],
+        'training_time': (datetime.now() - start_time).total_seconds() / 60,
+        'model_config': {
+            'input_size': model.input_size,
+            'hidden_size': model.hidden_size,
+            'num_classes': model.num_classes,
+            'alpha': criterion.alpha,
+            'margin': criterion.margin
+        }
     }
+    
+    # 保存结果到文件
+    with open(f'results/{model_name}_results.pkl', 'wb') as f:
+        pickle.dump(results, f)
+        
+    return model, results

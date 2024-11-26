@@ -77,3 +77,4 @@ jupyter notebook notebooks/ECG.ipynb
 The model achieves:
 - Test# ECG-Classification-with-Siamese-Neural-Network
 # ECG-Classification-with-Siamese-Neural-Network
+# Siamese-SNN-ECG
