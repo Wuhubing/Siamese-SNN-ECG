@@ -1,6 +1,10 @@
 # src/__init__.py
-from . import data
 from . import models
+from . import data
 from . import utils
 
-__version__ = '0.1.0'
+__all__ = [
+    'models',
+    'data',
+    'utils'
+]

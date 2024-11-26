@@ -7,13 +7,13 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
 def load_and_process_record(record_path):
-    """加载并处理单个ECG记录"""
+    """Load and process single ECG record"""
     try:
-        # 读取记录和标注
+        # Read record and annotations
         record = wfdb.rdrecord(record_path)
         annotation = wfdb.rdann(record_path, 'atr')
         
-        # 获取信号数据和标注
+        # Get signal data and annotations
         signals = record.p_signal
         labels = annotation.symbol
         sample_points = annotation.sample
@@ -24,17 +24,17 @@ def load_and_process_record(record_path):
         return None, None, None
 
 def extract_heartbeats(signals, sample_points, window_size=250):
-    """从信号中提取心跳片段"""
+    """Extract heartbeat segments from signals"""
     heartbeats = []
     for point in sample_points:
-        # 确保窗口在信号范围内
+        # Ensure window is within signal range
         start = max(0, point - window_size//2)
         end = min(len(signals), point + window_size//2)
         
-        # 提取心跳片段
+        # Extract heartbeat segment
         beat = signals[start:end]
         
-        # 如果片段长度不足，进行填充
+        # Pad if segment length is insufficient
         if len(beat) < window_size:
             pad_width = window_size - len(beat)
             beat = np.pad(beat, ((0, pad_width), (0, 0)), mode='constant')
@@ -44,13 +44,13 @@ def extract_heartbeats(signals, sample_points, window_size=250):
     return np.array(heartbeats)
 
 def preprocess_data():
-    """预处理MIT-BIH数据集"""
+    """Preprocess MIT-BIH dataset"""
     print("Starting data preprocessing...")
     
-    # 创建processed目录
+    # Create processed directory
     os.makedirs('data/processed', exist_ok=True)
     
-    # 获取所有记录
+    # Get all records
     record_paths = []
     raw_dir = 'data/raw'
     for file in os.listdir(raw_dir):
@@ -58,7 +58,7 @@ def preprocess_data():
             record_name = file[:-4]
             record_paths.append(os.path.join(raw_dir, record_name))
     
-    # 收集所有数据
+    # Collect all data
     all_heartbeats = []
     all_labels = []
     
@@ -67,10 +67,10 @@ def preprocess_data():
         if signals is None:
             continue
             
-        # 提取心跳
+        # Extract heartbeats
         heartbeats = extract_heartbeats(signals, sample_points)
         
-        # 只保留主要类别: N(正常), V(室性早搏), A(房性早搏)
+        # Keep only main classes: N(Normal), V(VEB), A(SVEB)
         valid_beats = []
         valid_labels = []
         for beat, label in zip(heartbeats, labels):
@@ -81,25 +81,25 @@ def preprocess_data():
         all_heartbeats.extend(valid_beats)
         all_labels.extend(valid_labels)
     
-    # 转换为numpy数组
+    # Convert to numpy arrays
     X = np.array(all_heartbeats)
     y = np.array(all_labels)
     
-    # 标签编码
+    # Label encoding
     label_map = {'N': 0, 'V': 1, 'A': 2}
     y = np.array([label_map[label] for label in y])
     
-    # 数据集划分
+    # Dataset split
     X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42)
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
     
-    # 标准化
+    # Standardization
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
     X_val = scaler.transform(X_val.reshape(-1, X_val.shape[-1])).reshape(X_val.shape)
     X_test = scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
     
-    # 准备数据字典
+    # Prepare data dictionary
     processed_data = {
         'X_train': X_train,
         'y_train': y_train,
@@ -111,7 +111,7 @@ def preprocess_data():
         'scaler': scaler
     }
     
-    # 保存处理后的数据
+    # Save processed data
     with open('data/processed/processed_data.pkl', 'wb') as f:
         pickle.dump(processed_data, f)
     

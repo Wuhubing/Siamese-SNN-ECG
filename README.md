@@ -1,81 +1,79 @@
-# ECG Classification with Siamese Neural Network
+# Siamese-SNN-ECG
 
-A deep learning project for ECG heartbeat classification using Siamese Neural Networks.
+An efficient ECG classification framework based on Siamese Neural Network (SNN) and Spiking Neural Network.
 
-## Project Structure
-```
-ecg_snn_project/
-├── data/                    # Data directory
-│   ├── processed/          # Processed dataset
-│   └── raw/               # Raw MIT-BIH data
-├── notebooks/             # Jupyter notebooks
-│   ├── ECG.ipynb         # Main training notebook
-│   └── data_analysis.ipynb # Data analysis notebook
-├── scripts/              # Utility scripts
-│   ├── download_data.sh  # Dataset download script
-│   ├── prepare_data.py   # Data preprocessing script
-│   └── train.py         # Training script
-├── src/                 # Source code
-│   ├── data/           # Data processing modules
-│   ├── models/         # Model architectures
-│   └── utils/          # Utility functions
-├── environment.yml     # Conda environment file
-└── requirements.txt    # Pip requirements file
-```
+## Project Overview
+
+This project presents a novel ECG classification framework that combines the advantages of Siamese Neural Networks and Spiking Neural Networks for automatic arrhythmia detection and classification. Key features:
+
+- Utilizes Siamese network architecture to enhance few-shot learning capability
+- Integrates Spiking Neural Network to reduce computational complexity
+- Achieves accurate classification of three ECG signal types: Normal, Ventricular Ectopic Beat (VEB), and Supraventricular Ectopic Beat (SVEB)
+
+## Requirements
+
+- Python 3.8+
+- PyTorch 1.8+
+- NumPy
+- scikit-learn
+- wfdb
+- tqdm
 
 ## Installation
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/your-username/ecg_snn_project.git
-cd ecg_snn_project
-```
-
-2. Create environment (choose one):
-
-Using conda:
-```bash
-conda env create -f environment.yml
-conda activate ecg_snn
-```
-
-Or using pip:
-```bash
-python -m venv env
-source env/bin/activate  # Linux/Mac
-env\Scripts\activate     # Windows
+git clone https://github.com/Wuhubing/Siamese-SNN-ECG.git
+cd Siamese-SNN-ECG
 pip install -r requirements.txt
 ```
 
 ## Data Preparation
 
-1. Download MIT-BIH dataset:
+1. Download MIT-BIH Arrhythmia Database:
+
 ```bash
-chmod +x scripts/download_data.sh  # Linux/Mac only
-./scripts/download_data.sh
+python download_data.py
 ```
 
-2. Process the data:
+2. Preprocess data:
 ```bash
-python scripts/prepare_data.py
+python src/data/preprocess_data.py
 ```
 
-## Training
-
-Using script:
+## Model Training
 ```bash
-python scripts/train.py
+python train_and_compare.py
+```
+## Project Structure
+```bash
+Siamese-SNN-ECG/
+├── data/ # Data directory
+├── src/ # Source code
+│ ├── data/ # Data processing modules
+│ ├── models/ # Model definitions
+│ └── utils/ # Utility functions
+├── results/ # Experimental results
+└── best_model.pth # Pre-trained model
 ```
 
-Or using notebook:
-```bash
-jupyter notebook notebooks/ECG.ipynb
+## Author
+
+- Weibing Wang
+- University of Wisconsin-Madison
+- Email: wwang652@wisc.edu
+
+## Citation
+
+If you use this code or method in your research, please cite our paper:
+
+```bibtex
+@article{wang2024towards,
+title={Towards Efficient Healthcare Monitoring: A Novel Siamese-SNN Framework for Robust ECG Classification},
+author={Wang, Weibing},
+year={2024}
+}
 ```
 
-## Results
+## License
 
-The model achieves:
-- Test# ECG-Classification-with-Siamese-Neural-Network
-# ECG-Classification-with-Siamese-Neural-Network
-# Siamese-SNN-ECG
-# Siamese-SNN-ECG
+MIT License

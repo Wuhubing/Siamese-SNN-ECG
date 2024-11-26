@@ -191,7 +191,6 @@ class ECGPreprocessor:
                     print(f"Warning: R-peak alignment failed for a segment: {str(e)}")
                     aligned_segments.append(seg)  
             
-            # 4. 滤波去噪
             filtered_segments = np.array([self.filter_ecg(seg) for seg in aligned_segments])
             
             print(f"Preprocessed {len(segments)} segments")
@@ -289,14 +288,12 @@ class ECGPreprocessor:
             return None
 
     def process_data(self):
-        # 加载和处理数据
+  
         X_all, y_all = self.load_multiple_records()
         
-        # 数据预处理 - 使用self调用方法
         X_processed = self.preprocess_beats(X_all, y_all)
         X_features = self.extract_features(X_processed)
         
-        # 准备训练数据 - 使用self调用方法
         train_data = self.prepare_snn_data(X_features, y_all)
         
         if train_data is not None:

@@ -7,6 +7,7 @@ from datetime import datetime
 from src.models.snn import SNN, CombinedLoss
 from src.data.dataset import create_dataloaders
 from src.utils.training import train_model
+from src.utils import ResourceMonitor, format_resource_stats  # 添加导入
 
 def train_models():
     # 设置随机种子
@@ -25,106 +26,93 @@ def train_models():
             'config': {
                 'num_epochs': 100,
                 'batch_size': 128,
-                'lr': 0.001
+                'lr': 0.001,
+                'time_steps': 8
             }
         },
         {
-            'name': 'larger_batch',
-            'config': {
-                'num_epochs': 100,
-                'batch_size': 256,
-                'lr': 0.001
-            }
-        },
-        {
-            'name': 'higher_lr',
+            'name': 'larger_steps',
             'config': {
                 'num_epochs': 100,
                 'batch_size': 128,
-                'lr': 0.002
+                'lr': 0.001,
+                'time_steps': 16
             }
         }
     ]
     
     # 创建结果目录
-    os.makedirs('results', exist_ok=True)
+    os.makedirs('results/resource_usage', exist_ok=True)
+    
+    # 创建资源监控器
+    monitor = ResourceMonitor()
     
     # 训练所有模型
     results = {}
+    resource_stats = {}
     for model_config in models_to_train:
-        print(f"\nTraining {model_config['name']}...")
+        name = model_config['name']
+        print(f"\nTraining {name}...")
+        
+        # 开始监控
+        monitor.start_monitoring(tag=name)
+        
+        # 训练模型
         model, model_results = train_model(
             processed_data,
-            model_name=model_config['name'],
+            model_name=name,
             **model_config['config']
         )
-        results[model_config['name']] = model_results
+        
+        # 停止监控并获取统计数据
+        stats = monitor.stop_monitoring()
+        resource_stats[name] = stats
+        results[name] = model_results
+        
+        # 打印资源使用情况
+        print(f"\nResource usage for {name}:")
+        for metric, value in format_resource_stats(stats).items():
+            print(f"{metric}: {value}")
     
-    return results
-
-def plot_comparison(results):
-    """绘制不同模型的训练过程对比图"""
-    plt.figure(figsize=(15, 5))
-    
-    # 损失曲线
-    plt.subplot(121)
-    for name, result in results.items():
-        plt.plot(result['val_losses'], label=f'{name}_val')
-        plt.plot(result['train_losses'], '--', label=f'{name}_train')
-    plt.title('Loss Curves')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    
-    # 准确率曲线
-    plt.subplot(122)
-    for name, result in results.items():
-        plt.plot(result['val_accs'], label=f'{name}_val')
-        plt.plot(result['train_accs'], '--', label=f'{name}_train')
-    plt.title('Accuracy Curves')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.savefig('results/training_curves_comparison.png')
-    plt.close()
-
-def create_comparison_table(results):
-    """创建性能对比表格"""
-    data = []
-    for name, result in results.items():
-        data.append({
+    # 创建资源使用对比表格
+    resource_comparison = pd.DataFrame([
+        {
             'Model': name,
-            'Best Val Acc': f"{max(result['val_accs']):.4f}",
-            'Test Acc': f"{result['test_acc']:.4f}",
-            'Best Epoch': result['best_epoch'] + 1,
-            'Training Time (min)': f"{result['training_time']:.1f}"
-        })
+            'Avg GPU Memory (MB)': stats['gpu_memory']['mean'],
+            'Max GPU Util (%)': stats['gpu_utilization']['max'],
+            'Avg Power (W)': stats['power_usage']['mean'],
+            'Training Time (min)': stats['duration_minutes']
+        }
+        for name, stats in resource_stats.items()
+    ])
     
-    df = pd.DataFrame(data)
-    return df
+    resource_comparison.to_csv('results/resource_comparison.csv', index=False)
+    
+    return results, resource_stats
 
 def main():
     print("Starting model training and comparison...")
     
-    # 训练模型
-    results = train_models()
+    # 训练模型并获取资源使用统计
+    results, resource_stats = train_models()
     
-    # 绘制对比图
-    plot_comparison(results)
-    
-    # 创建对比表格
+    # 创建性能对比表格
     comparison_table = create_comparison_table(results)
     print("\nModel Performance Comparison:")
     print(comparison_table.to_string(index=False))
+    
+    # 打印资源使用对比
+    print("\nResource Usage Comparison:")
+    resource_df = pd.read_csv('results/resource_comparison.csv')
+    print(resource_df.to_string(index=False))
     
     # 保存表格
     comparison_table.to_csv('results/model_comparison.csv', index=False)
     
     print("\nResults have been saved to the 'results' directory:")
-    print("- Training curves: results/training_curves_comparison.png")
     print("- Performance comparison: results/model_comparison.csv")
+    print("- Resource usage: results/resource_comparison.csv")
+    print("- Detailed resource logs: results/resource_usage/")
 
 if __name__ == '__main__':
     main()
