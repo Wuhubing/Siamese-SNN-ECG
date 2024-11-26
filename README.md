@@ -64,7 +64,7 @@ Siamese-SNN-ECG/
 
 ## Citation
 
-If you use this code or method in your research, please cite our paper:
+If you use this code or method in your research, please cite:
 
 ```bibtex
 @article{wang2024towards,
